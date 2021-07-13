@@ -236,6 +236,13 @@ def get_backend(backend):
     elif backend == "onnxruntime":
         from backend_onnxruntime import BackendOnnxruntime
         backend = BackendOnnxruntime()
+    elif backend == "tvm":
+        if os.environ.get('CK_USE_OCTOMIZER','').lower()!='yes':
+           from backend_tvm import BackendTVM
+           backend = BackendTVM()
+        else:
+           from backend_octomizer import BackendOctomizer
+           backend = BackendOctomizer()
     elif backend == "null":
         from backend_null import BackendNull
         backend = BackendNull()
@@ -413,6 +420,10 @@ def main():
     # find backend
     backend = get_backend(args.backend)
 
+    # If TVM add max_batchsize
+    if args.backend == "tvm":
+        backend.max_batchsize = args.max_batchsize
+
     # override image format if given
     image_format = args.data_format if args.data_format else backend.image_format()
 
@@ -433,11 +444,12 @@ def main():
                         use_cache=args.cache,
                         count=count, **kwargs)
     # load model to backend
-    model = backend.load(args.model, inputs=args.inputs, outputs=args.outputs)
+    model = backend.load(args.model,inputs=args.inputs, outputs=args.outputs)
     final_results = {
         "runtime": model.name(),
         "version": model.version(),
         "time": int(time.time()),
+        "args": vars(args),
         "cmdline": str(args),
     }
 
