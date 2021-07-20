@@ -236,13 +236,15 @@ def get_backend(backend):
     elif backend == "onnxruntime":
         from backend_onnxruntime import BackendOnnxruntime
         backend = BackendOnnxruntime()
-    elif backend == "tvm":
-        if os.environ.get('CK_USE_OCTOMIZER','').lower()!='yes':
-           from backend_tvm import BackendTVM
-           backend = BackendTVM()
-        else:
-           from backend_octomizer import BackendOctomizer
-           backend = BackendOctomizer()
+    elif backend == "tvm-onnx":
+        from backend_tvm_onnx import BackendTVM
+        backend = BackendTVM()
+    elif backend == "tvm-pytorch":
+        from backend_tvm_pytorch import BackendTVM
+        backend = BackendTVM()
+    elif backend == "octomizer":
+        from backend_octomizer import BackendOctomizer
+        backend = BackendOctomizer()
     elif backend == "null":
         from backend_null import BackendNull
         backend = BackendNull()
@@ -420,8 +422,8 @@ def main():
     # find backend
     backend = get_backend(args.backend)
 
-    # If TVM add max_batchsize
-    if args.backend == "tvm":
+    # If TVM, pass max_batchsize to the backend
+    if args.backend.startswith('tvm') or args.backend=='octomizer':
         backend.max_batchsize = args.max_batchsize
 
     # override image format if given

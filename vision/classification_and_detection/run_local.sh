@@ -11,6 +11,7 @@ fi
 
 PYTHON=python
 
+# Pass Python compiler name from CK workflow
 if [ "x${CK_ENV_COMPILER_PYTHON_FILE}" != "x" ] ; then
   PYTHON=${CK_ENV_COMPILER_PYTHON_FILE}
 fi

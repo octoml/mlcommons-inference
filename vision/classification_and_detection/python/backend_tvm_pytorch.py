@@ -1,11 +1,14 @@
 """
-TVM backend (https://github.com/apache/tvm)
+TVM backend with PyTorch models (https://github.com/apache/tvm)
+
+TBD: for now hardwired for resnet50_INT8bit_quantized.pt - need to make it more universal
+
+Developer(s): grigori@octoml.ai
 """
 
-import onnx
-import onnxruntime as rt
-
 import backend
+
+import torch
 
 import tvm
 from tvm import relay
@@ -24,15 +27,15 @@ class BackendTVM(backend.Backend):
         self.lock = Lock()
 
     def version(self):
-        return rt.__version__
+        return tvm.__version__
 
     def name(self):
         """Name of the runtime."""
-        return "tvm"
+        return "tvm-pytorch"
 
     def image_format(self):
         """image_format."""
-        # We use ONNX format, which is always NCHW.
+        # For now force NCHW.
         return "NCHW"
 
     def load(self, model_path, inputs=None, outputs=None):
@@ -56,67 +59,43 @@ class BackendTVM(backend.Backend):
         self.inputs = inputs
         self.outputs = outputs
 
-        opt = rt.SessionOptions()
-        print ('')
-        print ('ONNX: initialize runtime to get some model parameters ...')
-        print ('')
-
-        tmp_sess = rt.InferenceSession(model_path, opt)
-
-        if not inputs:
-            self.inputs = [meta.name for meta in tmp_sess.get_inputs()]
-        if not outputs:
-            self.outputs = [meta.name for meta in tmp_sess.get_outputs()]
-
-        # Detect shapes and set max batch size.
-        # If batch size is < max batch size, fill in with empty ones
-        # In the future, we should support dynamic batch sizes in TVM
-
         # Max batch size should be passed from main function
-        max_batchsize = self.max_batchsize
+        max_batchsize = 1 #self.max_batchsize
+
+        print ('')
+        print ('TVM PyTorch: load model ...')
+        print ('')
+
+        pytorch_model = torch.jit.load(model_path)
 
         shape_dict = {}
-        bsize_dict = {}
         dtype_dict = {}
 
-        for meta in tmp_sess.get_inputs():
-            input_name = meta.name
-            input_type_str = meta.type
-            input_shape = meta.shape
+        iname = "input_tensor:0"
+        ishape = (max_batchsize, 3, 224, 224)
+        shape_dict = {iname: ishape}
 
-            input_type = re.search(r"\(([A-Za-z0-9_]+)\)", input_type_str).group(1)
+        self.inputs=[iname]
+        self.outputs=['output']
 
-            if input_type == 'float': 
-                input_type='float32'
-
-            dtype_dict[input_name] = input_type
-
-            # For now, we expect that input_shape[0] == batch_size
-            # We force it to 1
-            input_shape[0] = 1
-            shape_dict[input_name] = tuple(input_shape)
-
-            bsize_dict[input_name] = max_batchsize
+        shape_list = [(iname, ishape)]
 
         print ('')
         print ('TVM: input shape(s): '+str(shape_dict))
-        print ('TVM: input type: '+str(dtype_dict))
         print ('TVM: outputs: '+str(self.outputs))
         print ('')
 
+        input('xyz')
+
         self.input_shapes = shape_dict
-        self.input_batch_sizes = bsize_dict
 
-        # We do not need ONNX runtime anymore
-        del tmp_sess
-
-        # Load model via ONNX to be used with TVM
         print ('')
-        print ('ONNX: load model ...')
+        print ('TVM PyTorch: import model ...')
         print ('')
+        # Extra param: opset=12
+        mod, params = relay.frontend.from_pytorch(pytorch_model, shape_list)
 
-        onnx_model = onnx.load(model_path)
-
+        #######################################################################
         # Init TVM
         # TBD: add tvm platform selector
         ctx = tvm.cpu(0)
@@ -125,24 +104,13 @@ class BackendTVM(backend.Backend):
         build_conf = {'relay.backend.use_auto_scheduler': False}
         opt_lvl = int(os.environ.get('MLPERF_TVM_OPT_LEVEL', 3))
 
-        target = os.environ.get('MLPERF_TVM_TARGET', 'llvm -mcpu=znver2')
+        target = os.environ.get('MLPERF_TVM_TARGET', 'llvm')
 
         target_host=None
         params={}
 
         # New target API
         tvm_target = tvm.target.Target(target, host=target_host)
-
-        print ('')
-        print ('TVM: import model ...')
-        print ('')
-        # Extra param: opset=12
-        mod, params = relay.frontend.from_onnx(onnx_model, shape_dict, freeze_params=True)
-
-        print ('')
-        print ('TVM: transform to static ...')
-        print ('')
-        mod = relay.transform.DynamicToStatic()(mod)
 
         print ('')
         print ('TVM: apply extra optimizations ...')
@@ -241,12 +209,22 @@ class BackendTVM(backend.Backend):
                     # Run TVM inference
                     sess.run()
 
-                    # Process TVM outputs
+                    print ('******************')
                     for i in range(sess.get_num_outputs()):
                         # Take only the output of batch size for dynamic batches
                         if len(tvm_output)<(i+1):
                             tvm_output.append([])
                         tvm_output[i].append(sess.get_output(i).asnumpy()[0])
+
+                    print (tvm_output)
+                    print (len(tvm_output[0]))
+                    print (np.shape(tvm_output[0]))
+                    input('xyz')
+
+                    top1 = np.argmax(tvm_output[0]) #.asnumpy())
+                    print (top1)
+
+                    input('xyz1')
 
         self.lock.release()
 
