@@ -104,7 +104,7 @@ class BackendTVM(backend.Backend):
         print ('TVM: outputs: '+str(self.outputs))
         print ('')
 
-        input('xyz')
+#        input('xyz')
 
         self.input_shapes = shape_dict
 
@@ -242,16 +242,16 @@ class BackendTVM(backend.Backend):
                     # Run TVM inference
                     sess.run()
 
-                    print ('******************')
+#                    print ('******************')
                     for i in range(sess.get_num_outputs()):
                         # Take only the output of batch size for dynamic batches
                         if len(tvm_output)<(i+1):
                             tvm_output.append([])
                         tvm_output[i].append(sess.get_output(i).asnumpy()[0])
-                    print (tvm_output)
-                    print (len(tvm_output[0]))
-                    print (np.shape(tvm_output[1]))
-                    input('xyz')
+#                    print (tvm_output)
+#                    print (len(tvm_output[0]))
+#                    print (np.shape(tvm_output[1]))
+#                    input('xyz')
 
         self.lock.release()
 
