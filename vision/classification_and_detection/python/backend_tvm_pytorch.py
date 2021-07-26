@@ -12,6 +12,9 @@ import torch
 
 import tvm
 from tvm import relay
+from tvm.relay import transform
+from tvm.relay.build_module import bind_params_by_name
+from tvm.driver.tvmc.common import convert_graph_layout
 
 import numpy as np
 
@@ -67,33 +70,18 @@ class BackendTVM(backend.Backend):
         print ('')
 
         pytorch_model = torch.jit.load(model_path)
+        pytorch_model.eval()
 
-        shape_dict = {}
-        dtype_dict = {}
+        shape_list = [("input", [max_batchsize, 3, 224, 224])]
 
-        iname = "input_tensor:0"
-        ishape = (max_batchsize, 3, 224, 224)
-        shape_dict = {iname: ishape}
-
-        self.inputs=[iname]
-        self.outputs=['output']
-
-        shape_list = [(iname, ishape)]
-
-        print ('')
-        print ('TVM: input shape(s): '+str(shape_dict))
-        print ('TVM: outputs: '+str(self.outputs))
-        print ('')
-
-#        input('xyz')
-
-        self.input_shapes = shape_dict
-
-        print ('')
-        print ('TVM PyTorch: import model ...')
-        print ('')
-        # Extra param: opset=12
         mod, params = relay.frontend.from_pytorch(pytorch_model, shape_list)
+
+        mod["main"] = bind_params_by_name(mod["main"], params)
+
+        #  move to NHWC layout, prerequisite for DNNL partitioning
+        mod = transform.FoldConstant()(mod)
+        mod = convert_graph_layout(mod, "NHWC")
+        mod = transform.FoldConstant()(mod)
 
         #######################################################################
         # Init TVM
@@ -117,7 +105,7 @@ class BackendTVM(backend.Backend):
         print ('')
         # Padding optimization
         # Adds extra optimizations
-        mod =relay.transform.FoldExplicitPadding()(mod)
+#        mod =relay.transform.FoldExplicitPadding()(mod)
 
 
         print ('')
@@ -132,16 +120,13 @@ class BackendTVM(backend.Backend):
         if executor == "graph" or executor == "debug":
             from tvm.contrib import graph_executor
 
-            # Without history
-            with tvm.transform.PassContext(opt_level=opt_lvl, config=build_conf):
-                graph_module = relay.build(mod,
-                                           target=tvm_target,
-                                           params=params)
-            lib = graph_module
+            lib=relay.build(mod, target=tvm_target)
 
             print ('')
             print ('TVM: init graph engine ...')
             print ('')
+
+#            lib.export_library('/tmp/tvm.so')
 
             self.sess = graph_executor.GraphModule(lib['default'](ctx))
         elif executor == "vm":
@@ -159,6 +144,13 @@ class BackendTVM(backend.Backend):
 
             self.sess = VirtualMachine(r_exec, ctx)
 
+
+        # For now hardwire inputs/outputs for just 1 model
+        # TBD: take info from the CK package for a given model!
+
+        self.inputs=['input']
+        self.outputs=['output']
+
         print ('')
         print ('TVM: model ready ...')
         print ('')
@@ -167,65 +159,24 @@ class BackendTVM(backend.Backend):
 
 
     def predict(self, feed):
-        """Run the prediction."""
-
-        executor = self.tvm_executor
 
         sess = self.sess
 
-        self.lock.acquire()
+#        self.lock.acquire()
 
-        if executor=='vm':
-            input_list = []
-            for iname, data in feed.items():
-                input_list.append(tvm.nd.array(data, device=self.tvm_ctx))
+        key=[key for key in feed.keys()][0]
+        for iname, data in feed.items():
+            for d in data:
+                sess.set_input(iname, tvm.nd.array([d]))
 
-            tvm_output = sess.invoke("main", *input_list)
-            if not self.output_order:
-               tvm_output = [x.asnumpy() for x in tvm_output]
-            else:
-               tvm_output = [tvm_output[x].asnumpy() for x in self.output_order]
+        # Run TVM inference
+        sess.run()
 
-        elif executor=='vm-stateful':
-            input_list = []
-            for iname, data in feed.items():
-                input_list.append(tvm.nd.array(data, device=self.tvm_ctx))
+        output=[]
+        for i in range(sess.get_num_outputs()):
+            output.append(np.asarray(sess.get_output(i).asnumpy()))
 
-            sess.invoke_stateful("main", *input_list)
+#        self.lock.release()
 
-            tvm_output = sess.get_outputs()
-            if not self.output_order:
-               tvm_output = [x.asnumpy() for x in tvm_output]
-            else:
-               tvm_output = [tvm_output[x].asnumpy() for x in self.output_order]
-        else:
-            # Prepare TVM inputs
-            tvm_output = []
+        return output
 
-            for iname, data in feed.items():
-                for d in data:
-                    sess.set_input(iname, tvm.nd.array([d]))
-
-                    # Run TVM inference
-                    sess.run()
-
-#                    print ('******************')
-                    for i in range(sess.get_num_outputs()):
-                        # Take only the output of batch size for dynamic batches
-                        if len(tvm_output)<(i+1):
-                            tvm_output.append([])
-                        tvm_output[i].append(sess.get_output(i).asnumpy()[0])
-
-#                    print (tvm_output)
-#                    print (len(tvm_output[0]))
-#                    print (np.shape(tvm_output[0]))
-#                    input('xyz')
-
-                    top1 = np.argmax(tvm_output[0]) #.asnumpy())
-#                    print (top1)
-
-#                    input('xyz1')
-
-        self.lock.release()
-
-        return tvm_output
