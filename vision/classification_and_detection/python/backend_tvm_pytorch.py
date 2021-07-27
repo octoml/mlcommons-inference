@@ -63,7 +63,7 @@ class BackendTVM(backend.Backend):
         self.outputs = outputs
 
         # Max batch size should be passed from main function
-        max_batchsize = 1 #self.max_batchsize
+        max_batchsize = self.max_batchsize
 
         print ('')
         print ('TVM PyTorch: load model ...')
@@ -164,19 +164,26 @@ class BackendTVM(backend.Backend):
 
 #        self.lock.acquire()
 
-        key=[key for key in feed.keys()][0]
+        max_batch_size = self.max_batchsize
+        batch_size = max_batch_size
         for iname, data in feed.items():
-            for d in data:
-                sess.set_input(iname, tvm.nd.array([d]))
+            batch_size = len(data)
+            if batch_size < max_batch_size:
+               # Fill in with the first tensor
+                data_extra = np.stack([data[0]] * (max_batch_size-batch_size))
+                data = np.vstack((data, data_extra))
+            elif batch_size > max_batch_size:
+                raise ValueError("Internal MLPerf error: dynamic batch size > max batch size")
+
+            sess.set_input(iname, tvm.nd.array(data))
 
         # Run TVM inference
         sess.run()
 
-        output=[]
+        # Process TVM outputs
+        output = []
         for i in range(sess.get_num_outputs()):
-            output.append(np.asarray(sess.get_output(i).asnumpy()))
-
-#        self.lock.release()
+            # Take only the output of batch size for dynamic batches
+            output.append(sess.get_output(i).asnumpy()[:batch_size])
 
         return output
-
