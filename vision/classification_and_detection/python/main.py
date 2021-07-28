@@ -243,6 +243,9 @@ def get_backend(backend):
     elif backend == "onnxruntime":
         from backend_onnxruntime import BackendOnnxruntime
         backend = BackendOnnxruntime()
+    elif backend == "tvm":
+        from backend_tvm import BackendTVM
+        backend = BackendTVM()
     elif backend == "tvm-onnx":
         from backend_tvm_onnx import BackendTVM
         backend = BackendTVM()
@@ -432,6 +435,9 @@ def main():
     # If TVM, pass max_batchsize to the backend
     if args.backend.startswith('tvm') or args.backend=='octomizer':
         backend.max_batchsize = args.max_batchsize
+        backend.arena_num = args.threads
+        backend.arena_size = 4
+
 
     # override image format if given
     image_format = args.data_format if args.data_format else backend.image_format()
