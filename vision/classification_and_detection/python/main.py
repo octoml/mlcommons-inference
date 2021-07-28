@@ -35,7 +35,7 @@ MILLI_SEC = 1000
 # the datasets we support
 SUPPORTED_DATASETS = {
     "imagenet":
-        (imagenet.Imagenet, dataset.pre_process_vgg, dataset.PostProcessArgMax(offset=-1),
+        (imagenet.Imagenet, dataset.pre_process_vgg, dataset.PostProcessCommon(offset=-1),
          {"image_size": [224, 224, 3]}),
     "imagenet_mobilenet":
         (imagenet.Imagenet, dataset.pre_process_mobilenet, dataset.PostProcessArgMax(offset=-1),
