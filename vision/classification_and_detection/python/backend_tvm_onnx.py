@@ -12,8 +12,7 @@ import backend
 
 import tvm
 from tvm import runtime
-from tvm.contrib import graph_executor
-from tvm.contrib import graph_runtime
+from tvm.contrib import graph_executor, graph_runtime
 from tvm import relay
 
 import numpy as np
@@ -77,7 +76,7 @@ class BackendTVM(backend.Backend):
         # Even if inputs/outputs can be defined by MLPerf
         # TVM will need extra info about shapes to be properly initialized!
 
-        compiled_model='/tmp/compiled-model.so'
+        compiled_model='/tmp/compiled-model-tvm-onnx.so'
 
         # Grigori have noticed that TVM VM produces output on SSD models
         # that is not in an order expected by MLPerf. Hence we provide
@@ -243,26 +242,25 @@ class BackendTVM(backend.Backend):
                from tvm.contrib import graph_executor
                from tvm import runtime
 
-#               self.lib = runtime.load_module(compiled_model)
+               self.lib = runtime.load_module(compiled_model)
 
-#               self.graph = graph_executor.GraphModule(self.lib['default'](ctx))
-#               self.sess = graph_executor.GraphModule(self.lib['default'](ctx))
+               self.graph = graph_executor.GraphModule(self.lib['default'](ctx))
+               self.sess = graph_executor.GraphModule(self.lib['default'](ctx))
 
                # Temporally hardwire inputs/outputs (need to load from a model)
                self.inputs = ['input_tensor:0']
                self.outputs = ['ArgMax:0']
 
-
-               with open('/tmp/deploy.json', "r") as f:
-                  json_data = f.read()
-
-               with open('/tmp/deploy.params', "rb") as f:
-                  parameters_data = f.read()
-
-               self.lib = runtime.load_module('/tmp/deploy.so')
-
-               self.graph = graph_runtime.create(json_data, self.lib, runtime.cpu())
-               self.graph.load_params(parameters_data)
+#               with open('/tmp/deploy.json', "r") as f:
+#                  json_data = f.read()
+#
+#               with open('/tmp/deploy.params', "rb") as f:
+#                  parameters_data = f.read()
+#
+#               self.lib = runtime.load_module('/tmp/deploy.so')
+#
+#               self.graph = graph_runtime.create(json_data, self.lib, runtime.cpu())
+#               self.graph.load_params(parameters_data)
 
 
 
