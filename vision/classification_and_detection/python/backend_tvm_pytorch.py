@@ -4,6 +4,7 @@ TVM backend with PyTorch models (https://github.com/apache/tvm)
 TBD: for now hardwired for resnet50_INT8bit_quantized.pt - need to make it more universal
 
 Developer(s): grigori@octoml.ai
+              Alexader Peskov
 """
 
 import backend
@@ -17,6 +18,7 @@ from tvm import relay
 from tvm.relay import transform
 from tvm.relay.build_module import bind_params_by_name
 from tvm.driver.tvmc.common import convert_graph_layout
+from tvm.relay.op.contrib.dnnl import partition_for_dnnl
 
 import numpy as np
 
@@ -116,10 +118,15 @@ class BackendTVM(backend.Backend):
 
            mod["main"] = bind_params_by_name(mod["main"], params)
 
-           #  move to NHWC layout, prerequisite for DNNL partitioning
+
            mod = transform.FoldConstant()(mod)
+
+           #  move to NHWC layout, prerequisite for DNNL partitioning
            mod = convert_graph_layout(mod, "NHWC")
            mod = transform.FoldConstant()(mod)
+
+           # partitioning for DNNL
+           mod = partition_for_dnnl(mod)
 
            #######################################################################
            # Init TVM
@@ -160,7 +167,7 @@ class BackendTVM(backend.Backend):
                print ('')
 
                self.graph = graph_executor.GraphModule(self.lib['default'](ctx))
-               self.sess = graph_executor.GraphModule(self.lib['default'](ctx))
+#               self.sess = graph_executor.GraphModule(self.lib['default'](ctx))
 
                print ('')
                print ('TVM: exporting model as library ...')
@@ -185,7 +192,7 @@ class BackendTVM(backend.Backend):
                self.lib = runtime.load_module(compiled_model)
 
                self.graph = graph_executor.GraphModule(self.lib['default'](ctx))
-               self.sess = graph_executor.GraphModule(self.lib['default'](ctx))
+#               self.sess = graph_executor.GraphModule(self.lib['default'](ctx))
 
 #               with open('/tmp/deploy.json', "r") as f:
 #                  json_data = f.read()
