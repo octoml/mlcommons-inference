@@ -7,6 +7,7 @@ Developers: Grigori Fursin, Alexander Peskov
 import backend
 
 import tvm
+from tvm import auto_scheduler
 from tvm.contrib import graph_executor
 
 import numpy as np
@@ -91,6 +92,10 @@ class BackendTVM(backend.Backend):
         if model_path.endswith('.so') or model_path.endswith('.dylib'):
            compiled_model = model_path
 
+           if not os.path.isfile(compiled_model):
+               print ('')
+               raise Exception("Error: Model file {} not found!".format(compiled_model))
+
         if os.environ.get('MLPERF_DELETE_COMPILED_MODEL','').strip().lower()=='yes' and \
            os.path.isfile(compiled_model):
               os.remove(compiled_model)
@@ -127,6 +132,9 @@ class BackendTVM(backend.Backend):
 
            print ('TVM model: '+model_path)
 
+           build_conf = {}
+           params = {}
+
            if model_path.endswith('.pt'):
               import torch
               from tvm.relay.build_module import bind_params_by_name
@@ -143,7 +151,7 @@ class BackendTVM(backend.Backend):
               mod["main"] = bind_params_by_name(mod["main"], params)
 
               # Some optimizations
-              mod = transform.FoldConstant()(mod)
+              mod = relay.transform.FoldConstant()(mod)
 
               if os.environ.get('MLPERF_TVM_USE_DNNL','').strip().lower()=='yes':
                  from tvm.relay.op.contrib.dnnl import partition_for_dnnl
@@ -168,7 +176,7 @@ class BackendTVM(backend.Backend):
 
               # Some optimizations
               mod = relay.transform.DynamicToStatic()(mod)
-              mod = relay.transform.FoldExplicitPadding()(mod)
+              #mod = relay.transform.FoldExplicitPadding()(mod)
 
            else:
               print ('')
@@ -176,21 +184,34 @@ class BackendTVM(backend.Backend):
 
            # Build model
            # TBD! Apply autotuning history!
-           build_conf = {'relay.backend.use_auto_scheduler': False}
            opt_lvl = int(os.environ.get('MLPERF_TVM_OPT_LEVEL', 3))
 
            target = os.environ.get('MLPERF_TVM_TARGET', 'llvm')
 
            target_host=None
-           params={}
 
            # New target API
            tvm_target = tvm.target.Target(target, host=target_host)
 
-           print ('TVM compiled model: '+compiled_model)
+           # Check if apply history
+           tvm_history_json_file = os.environ.get('MLPERF_TVM_APPLY_HISTORY','').strip()
+           if tvm_history_json_file!='':
+              if not os.path.isfile(tvm_history_json_file):
+                 print ('')
+                 raise Exception("Error: TVM history file {} not found!".format(tvm_history_json_file))
 
-           self.lib=relay.build(mod, target=tvm_target)
+              build_conf['relay.backend.use_auto_scheduler']=True
+
+              with auto_scheduler.ApplyHistoryBest(tvm_history_json_file):
+                 with tvm.transform.PassContext(opt_level=opt_lvl, config=build_conf):
+                    self.lib=relay.build(mod, target=tvm_target, params=params)
+           else:
+              with tvm.transform.PassContext(opt_level=opt_lvl, config=build_conf):
+                 self.lib=relay.build(mod, target=tvm_target, params=params)
+
            self.lib.export_library(compiled_model)
+
+           print ('TVM compiled model: '+compiled_model)
 
         # Init graph
         self.graph = graph_executor.GraphModule(self.lib['default'](ctx))
