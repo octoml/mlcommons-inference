@@ -2,7 +2,6 @@
 OctoML Octomizer backend (https://octoml.ai)
 """
 
-import onnx
 import onnxruntime as rt
 
 import backend

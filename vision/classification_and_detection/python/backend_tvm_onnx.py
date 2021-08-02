@@ -1,4 +1,6 @@
 """
+NOT USED ANYMORE
+
 TVM backend with ONNX models (https://github.com/apache/tvm)
 
 Developer(s): Grigori Fursin, grigori@octoml.ai
@@ -140,8 +142,6 @@ class BackendTVM(backend.Backend):
            print ('TVM: input type: '+str(dtype_dict))
            print ('TVM: outputs: '+str(self.outputs))
            print ('')
-
-   #        input('xyz')
 
            self.input_shapes = shape_dict
 

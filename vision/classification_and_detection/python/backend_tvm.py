@@ -1,6 +1,9 @@
 """
-TBD
+TVM backend for MLPerf inference vision benchmark
+
+Developers: Grigori Fursin, Alexander Peskov
 """
+
 import backend
 
 import tvm
@@ -58,36 +61,157 @@ class BackendTVM(backend.Backend):
             os.environ[env_arg[0]] = env_arg[1]
 
     def load_impl(self, model_path, inputs, outputs, max_batchsize):
-        # First attempt to detect input and output names via ONNX run time.
-        # See backend_onnxruntime.py
-        #
-        # Even if inputs/outputs can be defined by MLPerf
-        # TVM will need extra info about shapes to be properly initialized!
+
+        # Check inputs and outputs
+        # Normally should be specified by MLPerf, by the command line
+        # By default taken from CK packages meta to ensure reproducibility and extensibility
+        x = os.environ.get('ML_MODEL_INPUT_LAYERS','').strip()
+        if x != '':
+           inputs = x.split(',')
+
+        x = os.environ.get('ML_MODEL_OUTPUT_LAYERS','').strip()
+        if x != '':
+           outputs = x.split(',')
 
         self.inputs = inputs
         self.outputs = outputs
+
+        # Detect working/tmp directory to store and retreive compiled models
+        work_dir = os.environ.get('MLPERF_TMP_DIR','')
+        if work_dir == '':
+           work_dir = os.environ.get('CK_PROGRAM_TMP_DIR','')
+        if work_dir == '':
+           import tempfile
+           work_dir = tempfile.gettempdir()
+        if work_dir == '':
+           work_dir = '/tmp'
+
+        # Check if load precompiled model
+        compiled_model = os.path.join(work_dir, 'model-tvm.so')
+        if model_path.endswith('.so') or model_path.endswith('.dylib'):
+           compiled_model = model_path
+
+        if os.environ.get('MLPERF_DELETE_COMPILED_MODEL','').strip().lower()=='yes' and \
+           os.path.isfile(compiled_model):
+              os.remove(compiled_model)
 
         # TODO(@peskov): who specify that?? Only outside? Looks like TVM specific WA
         # Max batch size should be passed from main function
         self.max_batchsize = max_batchsize
 
-        ctx = tvm.cpu(0)
-        self.lib = tvm.runtime.load_module(model_path)
+        # Select target (default: cpu)
+        # TBD(@gfursin): need to provide better customization
+        # of a target via external variables that can be passed
+        # from CK workflows
+        if os.environ.get('MLPERF_DEVICE','')=='gpu':
+           ctx = tvm.cuda(0)
+        else:
+           ctx = tvm.cpu(0)
+
+        # If precompiled model found, load it directly
+        if os.path.isfile(compiled_model):
+           print ('TVM: loading model '+compiled_model)
+           self.lib = tvm.runtime.load_module(compiled_model)
+
+        else:
+           ############################################################################
+           # Import model to TVM
+           from tvm import relay
+
+           input_shapes = os.environ.get('ML_MODEL_INPUT_SHAPES','').strip()
+           if input_shapes == '':
+               print ('')
+               raise Exception("Error: ML_MODEL_INPUT_SHAPES environment variable is not defined!")
+
+           input_shapes = input_shapes.replace('BATCH_SIZE', str(max_batchsize))
+
+           print ('TVM model: '+model_path)
+
+           if model_path.endswith('.pt'):
+              import torch
+              from tvm.relay.build_module import bind_params_by_name
+
+              shape_list = eval('[' + input_shapes + ']')
+
+              print ('TVM shape list: '+str(shape_list))
+
+              pytorch_model = torch.jit.load(model_path)
+              pytorch_model.eval()
+
+              mod, params = relay.frontend.from_pytorch(pytorch_model, shape_list)
+
+              mod["main"] = bind_params_by_name(mod["main"], params)
+
+              # Some optimizations
+              mod = transform.FoldConstant()(mod)
+
+              if os.environ.get('MLPERF_TVM_USE_DNNL','').strip().lower()=='yes':
+                 from tvm.relay.op.contrib.dnnl import partition_for_dnnl
+                 from tvm.driver.tvmc.common import convert_graph_layout
+
+                 #  move to NHWC layout, prerequisite for DNNL partitioning
+                 mod = convert_graph_layout(mod, "NHWC")
+                 mod = relay.transform.FoldConstant()(mod)
+
+                 mod = partition_for_dnnl(mod)
+
+           elif model_path.endswith('.onnx'):
+              import onnx
+
+              shape_dict = eval('{' + input_shapes + '}')
+
+              print ('TVM shape dict: '+str(shape_dict))
+
+              onnx_model = onnx.load(model_path)
+
+              mod, params = relay.frontend.from_onnx(onnx_model, shape_dict, freeze_params=True)
+
+              # Some optimizations
+              mod = relay.transform.DynamicToStatic()(mod)
+              mod = relay.transform.FoldExplicitPadding()(mod)
+
+           else:
+              print ('')
+              raise Exception("Error: model extension is not supported in TVM backend ({})!".format(model_path))
+
+           # Build model
+           # TBD! Apply autotuning history!
+           build_conf = {'relay.backend.use_auto_scheduler': False}
+           opt_lvl = int(os.environ.get('MLPERF_TVM_OPT_LEVEL', 3))
+
+           target = os.environ.get('MLPERF_TVM_TARGET', 'llvm')
+
+           target_host=None
+           params={}
+
+           # New target API
+           tvm_target = tvm.target.Target(target, host=target_host)
+
+           print ('TVM compiled model: '+compiled_model)
+
+           self.lib=relay.build(mod, target=tvm_target)
+           self.lib.export_library(compiled_model)
+
+        # Init graph
         self.graph = graph_executor.GraphModule(self.lib['default'](ctx))
 
         # TODO(@apekov): Check if provided inputs/outputs match with presented in model
         # TODO(@apekov): Is there function to get names of inputs/outputs? meanwhile fill it with fake names
         if not inputs:
-            self.inputs = [str(idx) for idx in range(self.graph.get_num_outputs())]
+            inputs = [str(idx) for idx in range(self.graph.get_num_outputs())]
         if not outputs:
-            self.outputs = [str(idx) for idx in range(self.graph.get_num_outputs())]
+            outputs = [str(idx) for idx in range(self.graph.get_num_outputs())]
 
+        # Check executors. Need vm/vm-stateful for SSD object detection models
         self.executor_type = os.environ.get('MLPERF_TVM_EXECUTOR', 'graph')
 
         if self.executor_type in ("graph", "debug"):
             pass
         elif self.executor_type in ("vm", "vm-stateful"):
             raise Exception("VM mode is UNSUPPORTED ...")
+
+        self.inputs = inputs
+        self.outputs = outputs
 
     def predict_impl(self, feed):
         if self.executor_type in ("vm", "vm-stateful"):

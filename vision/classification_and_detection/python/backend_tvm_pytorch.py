@@ -1,10 +1,10 @@
 """
+NOT USED ANYMORE
+
 TVM backend with PyTorch models (https://github.com/apache/tvm)
 
-TBD: for now hardwired for resnet50_INT8bit_quantized.pt - need to make it more universal
-
-Developer(s): grigori@octoml.ai
-              Alexader Peskov
+Developer(s): Grigori Fursin, grigori@octoml.ai
+              Alexander Peskov
 """
 
 import backend
@@ -12,13 +12,12 @@ import backend
 import torch
 
 import tvm
-from tvm import runtime
-from tvm.contrib import graph_executor, graph_runtime
-from tvm import relay
+from tvm import runtime, relay
 from tvm.relay import transform
 from tvm.relay.build_module import bind_params_by_name
-from tvm.driver.tvmc.common import convert_graph_layout
 from tvm.relay.op.contrib.dnnl import partition_for_dnnl
+from tvm.contrib import graph_executor, graph_runtime
+from tvm.driver.tvmc.common import convert_graph_layout
 
 import numpy as np
 

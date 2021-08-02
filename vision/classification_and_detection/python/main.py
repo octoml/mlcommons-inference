@@ -246,15 +246,15 @@ def get_backend(backend):
     elif backend == "tvm":
         from backend_tvm import BackendTVM
         backend = BackendTVM()
-    elif backend == "tvm-onnx":
-        from backend_tvm_onnx import BackendTVM
-        backend = BackendTVM()
-    elif backend == "tvm-pytorch":
-        from backend_tvm_pytorch import BackendTVM
-        backend = BackendTVM()
     elif backend == "octomizer":
         from backend_octomizer import BackendOctomizer
         backend = BackendOctomizer()
+#    elif backend == "tvm-onnx":
+#        from backend_tvm_onnx import BackendTVM
+#        backend = BackendTVM()
+#    elif backend == "tvm-pytorch":
+#        from backend_tvm_pytorch import BackendTVM
+#        backend = BackendTVM()
     elif backend == "null":
         from backend_null import BackendNull
         backend = BackendNull()
