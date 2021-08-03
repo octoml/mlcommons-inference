@@ -1,7 +1,7 @@
 """
 TVM backend for MLPerf inference vision benchmark
 
-Developers: Grigori Fursin, Alexander Peskov, Thierry Moreau
+Developers: Alexander Peskov, Thierry Moreau, Grigori Fursin
 """
 
 import backend
@@ -153,7 +153,7 @@ class BackendTVM(backend.Backend):
               # Some optimizations
               mod = relay.transform.FoldConstant()(mod)
 
-              if os.environ.get('MLPERF_TVM_USE_DNNL','').strip().lower()=='yes':
+              if os.environ.get('MLPERF_TVM_USE_DNNL','').strip().lower() == 'yes':
                  from tvm.relay.op.contrib.dnnl import partition_for_dnnl
                  from tvm.driver.tvmc.common import convert_graph_layout
 
@@ -178,24 +178,25 @@ class BackendTVM(backend.Backend):
               mod = relay.transform.DynamicToStatic()(mod)
               #mod = relay.transform.FoldExplicitPadding()(mod)
 
-              kernel_layout='NHWC'
+              if os.environ.get('MLPERF_TVM_TRANSFORM_LAYOUT','').strip().lower() == 'yes':
+                 kernel_layout='NHWC'
 
-              desired_layouts = {
-                  'qnn.conv2d': [kernel_layout, 'default'],
-                  'nn.conv2d': [kernel_layout, 'default'],
-                  'nn.conv2d_transpose': [kernel_layout, 'default'],
-                  'nn.depthwise_conv2d': [kernel_layout, 'default'],
-                  'nn.conv3d': [kernel_layout, 'default'],
-                  'nn.conv3d_transpose': [kernel_layout, 'default'],
-              }
+                 desired_layouts = {
+                     'qnn.conv2d': [kernel_layout, 'default'],
+                     'nn.conv2d': [kernel_layout, 'default'],
+                     'nn.conv2d_transpose': [kernel_layout, 'default'],
+                     'nn.depthwise_conv2d': [kernel_layout, 'default'],
+                     'nn.conv3d': [kernel_layout, 'default'],
+                     'nn.conv3d_transpose': [kernel_layout, 'default'],
+                 }
+   
+                 seq = tvm.transform.Sequential([relay.transform.RemoveUnusedFunctions(),
+                                                 relay.transform.FoldConstant(),
+                                                 relay.transform.ConvertLayout(desired_layouts),
+                                                 ])
 
-              seq = tvm.transform.Sequential([relay.transform.RemoveUnusedFunctions(),
-                                              relay.transform.FoldConstant(),
-                                              relay.transform.ConvertLayout(desired_layouts),
-                                              ])
-
-              with tvm.transform.PassContext(opt_level=3):
-                  mod = seq(mod)
+                 with tvm.transform.PassContext(opt_level=3):
+                     mod = seq(mod)
 
            else:
               print ('')
