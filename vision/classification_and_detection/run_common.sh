@@ -84,29 +84,29 @@ fi
 if [ $name == "resnet50-tvm-onnx" ] ; then
     model_path="$MODEL_DIR/resnet50_v1.onnx"
     profile=resnet50-onnxruntime
-    extra_args="$extra_args --backend tvm-onnx"
+    extra_args="$extra_args --backend tvm"
 fi
 if [ $name == "mobilenet-tvm-onnx" ] ; then
     model_path="$MODEL_DIR/mobilenet_v1_1.0_224.onnx"
     profile=mobilenet-onnxruntime
-    extra_args="$extra_args --backend tvm-onnx"
+    extra_args="$extra_args --backend tvm"
 fi
 if [ $name == "ssd-mobilenet-tvm-onnx" ] ; then
     model_path="$MODEL_DIR/ssd_mobilenet_v1_coco_2018_01_28.onnx"
     profile=ssd-mobilenet-onnxruntime
-    extra_args="$extra_args --backend tvm-onnx"
+    extra_args="$extra_args --backend tvm"
 fi
 if [ $name == "ssd-resnet34-tvm-onnx" ] ; then
     # use onnx model converted from pytorch
     model_path="$MODEL_DIR/resnet34-ssd1200.onnx"
     profile=ssd-resnet34-onnxruntime
-    extra_args="$extra_args --backend tvm-onnx"
+    extra_args="$extra_args --backend tvm"
 fi
 if [ $name == "ssd-resnet34-tf-tvm-onnx" ] ; then
     # use onnx model converted from tensorflow
     model_path="$MODEL_DIR/ssd_resnet34_mAP_20.2.onnx"
     profile=ssd-resnet34-onnxruntime-tf
-    extra_args="$extra_args --backend tvm-onnx"
+    extra_args="$extra_args --backend tvm"
 fi
 
 #
@@ -116,7 +116,7 @@ if [ $name == "resnet50-tvm-pytorch" ] ; then
     # Not sure if it's correct - we should use CK workflows instead
     model_path="$MODEL_DIR/resnet50_INT8bit_quantized.pt"
     profile=resnet50-onnxruntime
-    extra_args="$extra_args --backend tvm-pytorch"
+    extra_args="$extra_args --backend tvm"
 fi
 
 #
