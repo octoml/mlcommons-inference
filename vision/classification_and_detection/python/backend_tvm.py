@@ -77,6 +77,12 @@ class BackendTVM(backend.Backend):
         self.inputs = inputs
         self.outputs = outputs
 
+        self.output_order=None
+        tmp=os.environ.get('MLPERF_TVM_OUTPUT_ORDER','')
+        if tmp!='':
+            import json
+            self.output_order=json.loads('['+tmp+']')
+
         # Detect working/tmp directory to store and retreive compiled models
         work_dir = os.environ.get('MLPERF_TMP_DIR','')
         if work_dir == '':
@@ -189,7 +195,7 @@ class BackendTVM(backend.Backend):
                      'nn.conv3d': [kernel_layout, 'default'],
                      'nn.conv3d_transpose': [kernel_layout, 'default'],
                  }
-   
+
                  seq = tvm.transform.Sequential([relay.transform.RemoveUnusedFunctions(),
                                                  relay.transform.FoldConstant(),
                                                  relay.transform.ConvertLayout(desired_layouts),
@@ -197,6 +203,20 @@ class BackendTVM(backend.Backend):
 
                  with tvm.transform.PassContext(opt_level=3):
                      mod = seq(mod)
+
+           elif model_path.endswith('.tflite'):
+              # Grigori used https://tvm.apache.org/docs/tutorials/frontend/deploy_prequantized_tflite.html
+
+              import tflite
+
+              shape_dict = eval('{' + input_shapes + '}')
+
+              print ('TVM shape dict: '+str(shape_dict))
+
+              tflite_model_buf = open(model_path, "rb").read()
+              tflite_model = tflite.Model.GetRootAsModel(tflite_model_buf, 0)
+
+              mod, params = relay.frontend.from_tflite(tflite_model, shape_dict)
 
            else:
               print ('')
@@ -277,7 +297,8 @@ class BackendTVM(backend.Backend):
 
             # Process TVM outputs
             tvm_output = []
-            for i in range(self.graph.get_num_outputs()):
+            output_order = range(self.graph.get_num_outputs()) if self.output_order == None else self.output_order
+            for i in output_order:
                 # Take only the output of batch size for dynamic batches
                 tvm_output.append(self.graph.get_output(i).asnumpy()[:batch_size])
 
