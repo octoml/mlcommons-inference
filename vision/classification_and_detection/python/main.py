@@ -246,6 +246,9 @@ def get_backend(backend):
     elif backend == "tvm":
         from backend_tvm import BackendTVM
         backend = BackendTVM()
+    elif backend == "tvm_1":
+        from backend_tvm_1 import BackendTVM1
+        backend = BackendTVM1()
     elif backend == "octomizer":
         from backend_octomizer import BackendOctomizer
         backend = BackendOctomizer()
