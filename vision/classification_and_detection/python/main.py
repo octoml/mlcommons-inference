@@ -244,10 +244,14 @@ def get_backend(backend):
         from backend_onnxruntime import BackendOnnxruntime
         backend = BackendOnnxruntime()
     elif backend == "tvm":
+        from backend_tvm import BackendTVM
+        backend = BackendTVM()
+    elif backend == "tvm2":
+        # Experimental (not always working)
         from backend_tvm_v2 import BackendTVM
-#        from backend_tvm import BackendTVM
         backend = BackendTVM()
     elif backend == "tvm_1":
+        # Experimental
         from backend_tvm_1 import BackendTVM1
         backend = BackendTVM1()
     elif backend == "octomizer":
