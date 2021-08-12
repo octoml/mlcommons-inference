@@ -125,6 +125,9 @@ class BackendTVM(backend.Backend):
 
               print ('TVM shape list: '+str(shape_list))
 
+              x=env.get('MLPERF_TVM_TORCH_QUANTIZED_ENGINE','')
+              if x!='':
+                 torch.backends.quantized.engine = x
               pytorch_model = torch.jit.load(model_path)
               pytorch_model.eval()
 
